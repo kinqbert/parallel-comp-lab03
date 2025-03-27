@@ -1,0 +1,109 @@
+# Compiled object files and binaries
+*.o
+*.obj
+*.lo
+*.la
+*.al
+*.libs
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# Compiler-generated dependency files
+*.d
+*.dep
+
+# Debugging and profiling
+*.gcno
+*.gcda
+*.gcov
+*.pdb
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.cache
+*.DS_Store
+
+# CMake and build directories
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+build/
+dist/
+Debug/
+Release/
+
+# IDE-specific files
+
+## Visual Studio / Visual Studio Code
+.vscode/
+*.vcxproj
+*.vcxproj.filters
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+*.sln
+*.ipch
+
+## CLion (JetBrains)
+.idea/
+cmake-build-debug/
+cmake-build-release/
+
+## Eclipse
+.settings/
+.cproject
+.project
+.autotools/
+.metadata/
+
+## Xcode
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+*.xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+
+## Qt Creator
+*.pro.user
+*.pro.user.*
+*.qtc/
+.qmake.stash
+
+## Code::Blocks
+*.cbp
+*.layout
+*.depend
+obj/
+bin/
+
+## Dev-C++
+*.dev
+*.layout
+
+# Package managers
+.vcpkg/
+conanbuild/
+conanbuildinfo.*
+conaninfo.txt
+conan.lock
+cpplint.log
+node_modules/
+
+# Generated documentation
+doxygen-docs/
+docs/html/
+docs/latex/
