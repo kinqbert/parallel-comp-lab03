@@ -9,18 +9,20 @@
 #include <atomic>
 #include <random>
 #include <unordered_set>
-#include <sstream> // for std::ostringstream
+#include <sstream>
 
-static std::mutex g_outputMutex;
+using namespace std;
+
+static mutex g_outputMutex;
 
 // safePrint prints a single line atomically
-inline void safePrint(const std::string &message)
+inline void safePrint(const string &message)
 {
-    std::lock_guard<std::mutex> lock(g_outputMutex);
-    std::cout << message << std::endl;
+    lock_guard lock(g_outputMutex);
+    cout << message << endl;
 }
 
-// ThreadPool class - a thread pool with a single task queue
+// ThreadPool - a thread pool calss with a single task queue
 class ThreadPool
 {
 public:
@@ -34,9 +36,9 @@ public:
     }
 
     // initializes the thread pool, creating 'workerCount' worker threads
-    void initialize(size_t workerCount)
+    void initialize(const size_t workerCount)
     {
-        std::unique_lock<std::mutex> lock(m_mutex);
+        unique_lock lock(m_mutex);
         if (!m_workers.empty() || m_stop)
             return;
 
@@ -59,7 +61,7 @@ public:
         int taskID;
         {
             // lock the mutex to modify the task queue
-            std::unique_lock<std::mutex> lock(m_mutex);
+            unique_lock lock(m_mutex);
 
             // if the pool is already stopping, do not add new tasks
             if (m_stop)
@@ -72,14 +74,14 @@ public:
             //  1) marks the task as in-progress
             //  2) executes the actual function
             //  3) unmarks the task as in-progress
-            auto userFunction = std::bind(std::forward<Func>(func), std::forward<Args>(args)...);
+            auto userFunction = bind(forward<Func>(func), forward<Args>(args)...);
             auto wrapper = [this, taskID, userFunction]() {
                 markTaskStart(taskID);
                 userFunction();
                 markTaskEnd(taskID);
             };
 
-            m_tasks.push(std::move(wrapper));
+            m_tasks.push(move(wrapper));
         }
         // notify worker thread that a new task is available
         m_cv.notify_one();
@@ -90,7 +92,7 @@ public:
     void terminate()
     {
         {
-            std::unique_lock<std::mutex> lock(m_mutex);
+            unique_lock lock(m_mutex);
             if (m_stop)
                 return;
             m_stop = true;
@@ -99,7 +101,7 @@ public:
         m_cv.notify_all();
 
         // join all worker threads
-        for (std::thread &worker : m_workers)
+        for (thread &worker : m_workers)
         {
             if (worker.joinable())
                 worker.join();
@@ -108,36 +110,36 @@ public:
 
         // clearing the task queue
         {
-            std::queue<std::function<void()>> emptyQueue;
-            std::swap(m_tasks, emptyQueue);
+            queue<function<void()>> emptyQueue;
+            swap(m_tasks, emptyQueue);
         }
 
         // clear the in-progress set too (if desired)
         {
-            std::lock_guard<std::mutex> lock(m_inProgressMutex);
+            lock_guard lock(m_inProgressMutex);
             m_inProgress.clear();
         }
     }
 
     // returns a vector of task IDs that are currently running
-    std::vector<int> getInProgressTasks()
+    vector<int> getInProgressTasks()
     {
-        std::lock_guard<std::mutex> lock(m_inProgressMutex);
-        return std::vector<int>(m_inProgress.begin(), m_inProgress.end());
+        lock_guard lock(m_inProgressMutex);
+        return vector(m_inProgress.begin(), m_inProgress.end());
     }
 
 private:
-    // Main function for each worker thread:
-    //   - Waits for new tasks in the queue
-    //   - Executes them
-    //   - Exits when the pool is stopped and the queue is empty
+    // main function for each worker thread:
+    //   1) waits for new tasks in the queue
+    //   2) executes them
+    //   3) exits when the pool is stopped and the queue is empty
     void routine()
     {
         while (true)
         {
-            std::function<void()> task;
+            function<void()> task;
             {
-                std::unique_lock<std::mutex> lock(m_mutex);
+                unique_lock lock(m_mutex);
 
                 // wait while the queue is empty AND the pool is not stopped
                 m_cv.wait(lock, [this] {
@@ -148,7 +150,7 @@ private:
                 if (m_stop && m_tasks.empty())
                     return;
 
-                task = std::move(m_tasks.front());
+                task = move(m_tasks.front());
                 m_tasks.pop();
             }
             // execute the task outside the mutex lock
@@ -159,54 +161,54 @@ private:
     // mark the start of a task by inserting its ID into an in-progress set
     void markTaskStart(const int id)
     {
-        std::lock_guard<std::mutex> lock(m_inProgressMutex);
+        lock_guard lock(m_inProgressMutex);
         m_inProgress.insert(id);
     }
 
     // mark the end of a task by removing its ID from the set
     void markTaskEnd(const int id)
     {
-        std::lock_guard<std::mutex> lock(m_inProgressMutex);
+        lock_guard lock(m_inProgressMutex);
         m_inProgress.erase(id);
     }
 
     // the task queue
-    std::queue<std::function<void()>> m_tasks;
+    queue<function<void()>> m_tasks;
 
     // vector of worker threads
-    std::vector<std::thread> m_workers;
+    vector<thread> m_workers;
 
     // mutex for protecting access to the queue
-    std::mutex m_mutex;
+    mutex m_mutex;
 
     // condition variable to notify worker threads of new tasks
-    std::condition_variable m_cv;
+    condition_variable m_cv;
 
     // flag indicating whether the pool should stop or not
     bool m_stop;
 
     // variable to generate unique task IDs
-    std::atomic<int> m_taskCounter;
+    atomic<int> m_taskCounter;
 
     // variables to track which tasks are currently running
-    std::unordered_set<int> m_inProgress;
-    std::mutex m_inProgressMutex;
+    unordered_set<int> m_inProgress;
+    mutex m_inProgressMutex;
 };
 
 void exampleTask(const int taskID, const int sleepSeconds)
 {
     {
         // Build a single-line message and send to safePrint
-        std::ostringstream oss;
+        ostringstream oss;
         oss << "[Task #" << taskID
             << "] Will run for " << sleepSeconds << " seconds.";
         safePrint(oss.str());
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(sleepSeconds));
+    this_thread::sleep_for(chrono::seconds(sleepSeconds));
 
     {
-        std::ostringstream oss;
+        ostringstream oss;
         oss << "[Task #" << taskID << "] Completed!";
         safePrint(oss.str());
     }
@@ -220,14 +222,14 @@ int main()
     const int producerCount = 3;
     const int tasksPerProducer = 4;
 
-    std::vector<std::thread> producers;
+    vector<thread> producers;
     producers.reserve(producerCount);
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> dist(10, 20);
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution dist(10, 20);
 
-    std::atomic<int> globalTaskID{1};
+    atomic globalTaskID{1};
 
     for (int i = 0; i < producerCount; ++i)
     {
@@ -240,16 +242,16 @@ int main()
                 int assignedID = pool.addTask(exampleTask, localID, sleepTime);
                 if (assignedID < 0)
                 {
-                    std::ostringstream oss;
+                    ostringstream oss;
                     oss << "[Producer #" << i << "] Failed to add task!";
                     safePrint(oss.str());
                 }
 
                 // simulating async behaviour
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                this_thread::sleep_for(chrono::milliseconds(500));
             }
             {
-                std::ostringstream oss;
+                ostringstream oss;
                 oss << "[Producer Thread #" << i
                     << "] Finished adding tasks.";
                 safePrint(oss.str());
@@ -257,7 +259,7 @@ int main()
         });
     }
 
-    std::thread monitor([&pool]() {
+    thread monitor([&pool]() {
         for (int round = 0; round < 10; ++round)
         {
             auto running = pool.getInProgressTasks();
@@ -268,13 +270,13 @@ int main()
             else
             {
                 // Build a single-line message for the running tasks
-                std::ostringstream oss;
+                ostringstream oss;
                 oss << "[Monitor] Currently running tasks: ";
                 for (auto id : running)
                     oss << id << " ";
                 safePrint(oss.str());
             }
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+            this_thread::sleep_for(chrono::seconds(3));
         }
     });
 
@@ -285,14 +287,14 @@ int main()
     }
 
     {
-        std::ostringstream oss;
+        ostringstream oss;
         oss << "[main] All tasks are submitted. Letting them run for 30 seconds...";
         safePrint(oss.str());
     }
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    this_thread::sleep_for(chrono::seconds(30));
 
     {
-        std::ostringstream oss;
+        ostringstream oss;
         oss << "[main] Terminating the thread pool...";
         safePrint(oss.str());
     }
@@ -302,7 +304,7 @@ int main()
         monitor.join();
 
     {
-        std::ostringstream oss;
+        ostringstream oss;
         oss << "[main] Program finished!";
         safePrint(oss.str());
     }
