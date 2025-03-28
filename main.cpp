@@ -9,6 +9,16 @@
 #include <atomic>
 #include <random>
 #include <unordered_set>
+#include <sstream> // for std::ostringstream
+
+static std::mutex g_outputMutex;
+
+// safePrint prints a single line atomically
+inline void safePrint(const std::string &message)
+{
+    std::lock_guard<std::mutex> lock(g_outputMutex);
+    std::cout << message << std::endl;
+}
 
 // ThreadPool class - a thread pool with a single task queue
 class ThreadPool
@@ -185,12 +195,21 @@ private:
 
 void exampleTask(const int taskID, const int sleepSeconds)
 {
-    std::cout << "[Task #" << taskID
-              << "] Will run for " << sleepSeconds << " seconds.\n";
+    {
+        // Build a single-line message and send to safePrint
+        std::ostringstream oss;
+        oss << "[Task #" << taskID
+            << "] Will run for " << sleepSeconds << " seconds.";
+        safePrint(oss.str());
+    }
 
     std::this_thread::sleep_for(std::chrono::seconds(sleepSeconds));
 
-    std::cout << "[Task #" << taskID << "] Completed!\n";
+    {
+        std::ostringstream oss;
+        oss << "[Task #" << taskID << "] Completed!";
+        safePrint(oss.str());
+    }
 }
 
 int main()
@@ -221,14 +240,20 @@ int main()
                 int assignedID = pool.addTask(exampleTask, localID, sleepTime);
                 if (assignedID < 0)
                 {
-                    std::cout << "[Producer #" << i << "] Failed to add task!\n";
+                    std::ostringstream oss;
+                    oss << "[Producer #" << i << "] Failed to add task!";
+                    safePrint(oss.str());
                 }
 
                 // simulating async behaviour
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
-            std::cout << "[Producer Thread #" << i
-                      << "] Finished adding tasks.\n";
+            {
+                std::ostringstream oss;
+                oss << "[Producer Thread #" << i
+                    << "] Finished adding tasks.";
+                safePrint(oss.str());
+            }
         });
     }
 
@@ -238,14 +263,16 @@ int main()
             auto running = pool.getInProgressTasks();
             if (running.empty())
             {
-                std::cout << "[Monitor] No tasks in progress right now.\n";
+                safePrint("[Monitor] No tasks in progress right now.");
             }
             else
             {
-                std::cout << "[Monitor] Currently running tasks: ";
+                // Build a single-line message for the running tasks
+                std::ostringstream oss;
+                oss << "[Monitor] Currently running tasks: ";
                 for (auto id : running)
-                    std::cout << id << " ";
-                std::cout << "\n";
+                    oss << id << " ";
+                safePrint(oss.str());
             }
             std::this_thread::sleep_for(std::chrono::seconds(3));
         }
@@ -257,15 +284,27 @@ int main()
             p.join();
     }
 
-    std::cout << "[main] All tasks are submitted. Letting them run for 30 seconds...\n";
+    {
+        std::ostringstream oss;
+        oss << "[main] All tasks are submitted. Letting them run for 30 seconds...";
+        safePrint(oss.str());
+    }
     std::this_thread::sleep_for(std::chrono::seconds(30));
 
-    std::cout << "[main] Terminating the thread pool...\n";
+    {
+        std::ostringstream oss;
+        oss << "[main] Terminating the thread pool...";
+        safePrint(oss.str());
+    }
     pool.terminate();
 
     if (monitor.joinable())
         monitor.join();
 
-    std::cout << "[main] Program finished!\n";
+    {
+        std::ostringstream oss;
+        oss << "[main] Program finished!";
+        safePrint(oss.str());
+    }
     return 0;
 }
