@@ -48,7 +48,7 @@ public:
         // create 'workerCount' threads, each running routine()
         for (size_t i = 0; i < workerCount; ++i)
         {
-            m_workers.emplace_back([this]() {
+            m_workers.emplace_back([this] {
                 this->routine();
             });
         }
@@ -227,7 +227,7 @@ int main()
 
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution dist(10, 20);
+    uniform_int_distribution dist(10, 16);
 
     atomic globalTaskID{1};
 
@@ -259,7 +259,7 @@ int main()
         });
     }
 
-    thread monitor([&pool]() {
+    thread monitor([&pool] {
         for (int round = 0; round < 10; ++round)
         {
             auto running = pool.getInProgressTasks();
