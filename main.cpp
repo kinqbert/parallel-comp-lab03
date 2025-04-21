@@ -84,7 +84,7 @@ public:
             m_tasks.push(move(wrapper));
         }
         // notify worker thread that a new task is available
-        m_cv.notify_one();
+        cv_newTaskAvailable.notify_one();
         return taskID;
     }
 
@@ -98,7 +98,7 @@ public:
             m_stop = true;
         }
         // wake all threads so they can exit waiting
-        m_cv.notify_all();
+        cv_newTaskAvailable.notify_all();
 
         // join all worker threads
         for (thread &worker : m_workers)
@@ -129,6 +129,28 @@ public:
     }
 
 private:
+    // the task queue
+    queue<function<void()>> m_tasks;
+
+    // vector of worker threads
+    vector<thread> m_workers;
+
+    // mutex for protecting access to the queue
+    mutex m_mutex;
+
+    // condition variable to notify worker threads of new tasks
+    condition_variable cv_newTaskAvailable;
+
+    // flag indicating whether the pool should stop or not
+    bool m_stop;
+
+    // variable to generate unique task IDs
+    atomic<int> m_taskCounter;
+
+    // variables to track which tasks are currently running
+    unordered_set<int> m_inProgress;
+    mutex m_inProgressMutex;
+
     // main function for each worker thread:
     //   1) waits for new tasks in the queue
     //   2) executes them
@@ -142,7 +164,7 @@ private:
                 unique_lock lock(m_mutex);
 
                 // wait while the queue is empty AND the pool is not stopped
-                m_cv.wait(lock, [this] {
+                cv_newTaskAvailable.wait(lock, [this] {
                     return !m_tasks.empty() || m_stop;
                 });
 
@@ -171,28 +193,6 @@ private:
         lock_guard lock(m_inProgressMutex);
         m_inProgress.erase(id);
     }
-
-    // the task queue
-    queue<function<void()>> m_tasks;
-
-    // vector of worker threads
-    vector<thread> m_workers;
-
-    // mutex for protecting access to the queue
-    mutex m_mutex;
-
-    // condition variable to notify worker threads of new tasks
-    condition_variable m_cv;
-
-    // flag indicating whether the pool should stop or not
-    bool m_stop;
-
-    // variable to generate unique task IDs
-    atomic<int> m_taskCounter;
-
-    // variables to track which tasks are currently running
-    unordered_set<int> m_inProgress;
-    mutex m_inProgressMutex;
 };
 
 void exampleTask(const int taskID, const int sleepSeconds)
@@ -201,7 +201,7 @@ void exampleTask(const int taskID, const int sleepSeconds)
         // Build a single-line message and send to safePrint
         ostringstream oss;
         oss << "[Task #" << taskID
-            << "] Will run for " << sleepSeconds << " seconds.";
+            << "] Started! Will run for " << sleepSeconds << " seconds.";
         safePrint(oss.str());
     }
 
@@ -216,11 +216,12 @@ void exampleTask(const int taskID, const int sleepSeconds)
 
 int main()
 {
-    ThreadPool pool;
-    pool.initialize(8);
-
     const int producerCount = 3;
-    const int tasksPerProducer = 4;
+    const int tasksPerProducer = 10;
+    const int workerCount = 8;
+
+    ThreadPool pool;
+    pool.initialize(workerCount);
 
     vector<thread> producers;
     producers.reserve(producerCount);
