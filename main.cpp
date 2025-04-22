@@ -38,7 +38,7 @@ public:
     // initializes the thread pool, creating 'workerCount' worker threads
     void initialize(const size_t workerCount)
     {
-        unique_lock lock(m_mutex);
+        unique_lock lock(m_queueMutex);
         if (!m_workers.empty() || m_stop)
             return;
 
@@ -61,7 +61,7 @@ public:
         int taskID;
         {
             // lock the mutex to modify the task queue
-            unique_lock lock(m_mutex);
+            unique_lock lock(m_queueMutex);
 
             // if the pool is already stopping, do not add new tasks
             if (m_stop)
@@ -92,7 +92,7 @@ public:
     void terminate()
     {
         {
-            unique_lock lock(m_mutex);
+            unique_lock lock(m_queueMutex);
             if (m_stop)
                 return;
             m_stop = true;
@@ -136,7 +136,7 @@ private:
     vector<thread> m_workers;
 
     // mutex for protecting access to the queue
-    mutex m_mutex;
+    mutex m_queueMutex;
 
     // condition variable to notify worker threads of new tasks
     condition_variable cv_newTaskAvailable;
@@ -161,7 +161,7 @@ private:
         {
             function<void()> task;
             {
-                unique_lock lock(m_mutex);
+                unique_lock lock(m_queueMutex);
 
                 // wait while the queue is empty AND the pool is not stopped
                 cv_newTaskAvailable.wait(lock, [this] {
@@ -234,7 +234,7 @@ int main()
 
     for (int i = 0; i < producerCount; ++i)
     {
-        producers.emplace_back([&pool, &dist, &gen, &globalTaskID, tasksPerProducer, i]() {
+        producers.emplace_back([&pool, &dist, &gen, &globalTaskID, tasksPerProducer, i] {
             for (int j = 0; j < tasksPerProducer; ++j)
             {
                 int localID = globalTaskID.fetch_add(1);
@@ -263,8 +263,7 @@ int main()
     thread monitor([&pool] {
         for (int round = 0; round < 10; ++round)
         {
-            auto running = pool.getInProgressTasks();
-            if (running.empty())
+            if (auto running = pool.getInProgressTasks(); running.empty())
             {
                 safePrint("[Monitor] No tasks in progress right now.");
             }
