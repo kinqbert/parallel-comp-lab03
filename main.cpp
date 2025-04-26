@@ -26,6 +26,9 @@ inline void safePrint(const string &message)
 class ThreadPool
 {
 public:
+    // flag indicating whether the pool should stop or not
+    bool m_stop;
+
     // default constructor
     ThreadPool() : m_stop(false), m_taskCounter(0) {}
 
@@ -75,7 +78,7 @@ public:
             //  2) executes the actual function
             //  3) unmarks the task as in-progress
             auto userFunction = bind(forward<Func>(func), forward<Args>(args)...);
-            auto wrapper = [this, taskID, userFunction]() {
+            auto wrapper = [this, taskID, userFunction] {
                 markTaskStart(taskID);
                 userFunction();
                 markTaskEnd(taskID);
@@ -128,28 +131,33 @@ public:
         return vector(m_inProgress.begin(), m_inProgress.end());
     }
 
+    bool isEverythingDoneUnsafe() const
+    {
+        return m_inProgress.empty() && m_tasks.empty();
+    }
+
 private:
     // the task queue
     queue<function<void()>> m_tasks;
+    // mutex for protecting access to the queue
+    mutex m_queueMutex;
 
     // vector of worker threads
     vector<thread> m_workers;
 
-    // mutex for protecting access to the queue
-    mutex m_queueMutex;
-
     // condition variable to notify worker threads of new tasks
     condition_variable cv_newTaskAvailable;
-
-    // flag indicating whether the pool should stop or not
-    bool m_stop;
 
     // variable to generate unique task IDs
     atomic<int> m_taskCounter;
 
     // variables to track which tasks are currently running
     unordered_set<int> m_inProgress;
+
     mutex m_inProgressMutex;
+
+    // marks completion of all tasks
+    condition_variable m_allTasksDone;
 
     // main function for each worker thread:
     //   1) waits for new tasks in the queue
@@ -192,6 +200,12 @@ private:
     {
         lock_guard lock(m_inProgressMutex);
         m_inProgress.erase(id);
+
+        // no more tasks - awake everyone waiting
+        if (m_inProgress.empty() && m_tasks.empty())
+        {
+            m_allTasksDone.notify_all();
+        }
     }
 };
 
@@ -217,7 +231,7 @@ void exampleTask(const int taskID, const int sleepSeconds)
 int main()
 {
     const int producerCount = 3;
-    const int tasksPerProducer = 10;
+    const int tasksPerProducer = 5;
     const int workerCount = 8;
 
     ThreadPool pool;
@@ -261,10 +275,11 @@ int main()
     }
 
     thread monitor([&pool] {
-        for (int round = 0; round < 10; ++round)
+        while (true)
         {
-            if (auto running = pool.getInProgressTasks(); running.empty())
-            {
+            auto running = pool.getInProgressTasks();
+
+            if (running.empty()) {
                 safePrint("[Monitor] No tasks in progress right now.");
             }
             else
@@ -272,30 +287,37 @@ int main()
                 // Build a single-line message for the running tasks
                 ostringstream oss;
                 oss << "[Monitor] Currently running tasks: ";
-                for (auto id : running)
+                for (const auto id : running)
                     oss << id << " ";
                 safePrint(oss.str());
             }
+
+            if (running.empty() && pool.m_stop) {
+                safePrint("[Monitor] Pool has stopped and there are no more tasks.");
+                break;
+            }
+
             this_thread::sleep_for(chrono::seconds(3));
         }
     });
 
     for (auto &p : producers)
     {
-        if (p.joinable())
+        if (p.joinable()) {
             p.join();
+        }
+    }
+
+    {
+        unique_lock lk(pool.m_inProgressMutex);
+        pool.m_allTasksDone.wait(lk, [&pool]{
+            return pool.isEverythingDoneUnsafe();
+        });
     }
 
     {
         ostringstream oss;
-        oss << "[main] All tasks are submitted. Letting them run for 30 seconds...";
-        safePrint(oss.str());
-    }
-    this_thread::sleep_for(chrono::seconds(30));
-
-    {
-        ostringstream oss;
-        oss << "[main] Terminating the thread pool...";
+        oss << "[main] All tasks completed. Terminating the thread pool...";
         safePrint(oss.str());
     }
     pool.terminate();
