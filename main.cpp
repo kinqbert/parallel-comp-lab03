@@ -136,6 +136,15 @@ public:
         return m_inProgress.empty() && m_tasks.empty();
     }
 
+    void waitUntilFinished()
+    {
+        unique_lock lk(m_inProgressMutex);
+        m_allTasksDone.wait(lk, [this] {
+            std::scoped_lock queueScopedLock(m_queueMutex);
+            return m_inProgress.empty() && m_tasks.empty();
+        });
+    }
+
 private:
     // the task queue
     queue<function<void()>> m_tasks;
@@ -284,7 +293,6 @@ int main()
             }
             else
             {
-                // Build a single-line message for the running tasks
                 ostringstream oss;
                 oss << "[Monitor] Currently running tasks: ";
                 for (const auto id : running)
@@ -308,12 +316,8 @@ int main()
         }
     }
 
-    {
-        unique_lock lk(pool.m_inProgressMutex);
-        pool.m_allTasksDone.wait(lk, [&pool]{
-            return pool.isEverythingDoneUnsafe();
-        });
-    }
+    safePrint("[main] Waiting for all tasks to finish...");
+    pool.waitUntilFinished();
 
     {
         ostringstream oss;
