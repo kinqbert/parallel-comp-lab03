@@ -15,6 +15,8 @@ using namespace std;
 
 static mutex g_outputMutex;
 
+// pause for thread pool, finish current task and go rest
+
 // safePrint prints a single line atomically
 inline void safePrint(const string &message)
 {
@@ -145,10 +147,22 @@ public:
         });
     }
 
+    void pause() {
+        std::scoped_lock lk(m_queueMutex);
+        m_paused = true;
+    }
+
+    void resume() {
+        {
+            std::scoped_lock lk(m_queueMutex);
+            m_paused = false;
+        }
+        cv_newTaskAvailable.notify_all();
+    }
+
 private:
     // the task queue
     queue<function<void()>> m_tasks;
-    // mutex for protecting access to the queue
     mutex m_queueMutex;
 
     // vector of worker threads
@@ -168,31 +182,31 @@ private:
     // marks completion of all tasks
     condition_variable m_allTasksDone;
 
+    bool m_paused{false};
+
     // main function for each worker thread:
     //   1) waits for new tasks in the queue
     //   2) executes them
     //   3) exits when the pool is stopped and the queue is empty
-    void routine()
-    {
-        while (true)
-        {
-            function<void()> task;
+    void routine() {
+        while (true) {
+            std::function<void()> task;
             {
-                unique_lock lock(m_queueMutex);
-
-                // wait while the queue is empty AND the pool is not stopped
-                cv_newTaskAvailable.wait(lock, [this] {
-                    return !m_tasks.empty() || m_stop;
+                std::unique_lock lk(m_queueMutex);
+                cv_newTaskAvailable.wait(lk, [this] {
+                    return m_stop ||
+                          (!m_paused && !m_tasks.empty());
                 });
 
-                // if the pool is stopped and the queue is empty, exit
                 if (m_stop && m_tasks.empty())
                     return;
 
-                task = move(m_tasks.front());
+                if (m_paused)
+                    continue;
+
+                task = std::move(m_tasks.front());
                 m_tasks.pop();
             }
-            // execute the task outside the mutex lock
             task();
         }
     }
@@ -282,6 +296,14 @@ int main()
             }
         });
     }
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    safePrint("[main] Pause requested");
+    pool.pause();
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    safePrint("[main] Resume requested");
+    pool.resume();
 
     thread monitor([&pool] {
         while (true)
